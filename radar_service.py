@@ -66,7 +66,7 @@ def chart_on_demand(snap: dict | None, ticker: str, data_dir: Path, allow_fetch:
     }
 
 def _get_deterministic_seed(ticker: str) -> int:
-    """利用股票代碼產生固定的確定性 Hash 因子，絕不使用隨機數"""
+    """利用股票代碼 MD5 哈希產生固定確定性因子，零隨機性"""
     return int(hashlib.md5(ticker.encode("utf-8")).hexdigest()[:8], 16)
 
 def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
@@ -92,12 +92,12 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
             v = float(df["Volume"].iloc[-20:].mean())
             turnover_20d = p * v
             
-            # 高品質硬門檻：股價 >= 18 元，20日日均成交金額 >= 40,000,000 元
+            # 硬門檻：股價 >= 18 元，日均成交金額 >= 40,000,000 元
             if p >= 18.0 and turnover_20d >= 40000000:
                 ret_20 = (p - float(df["Close"].iloc[-20])) / float(df["Close"].iloc[-20])
                 sample_market_rets.append(ret_20)
                 
-                # 確定性算法（完全無隨機數）
+                # 確定性算術推演（完全排除隨機數）
                 seed = _get_deterministic_seed(ticker)
                 seed_factor = (seed % 100) / 100.0
                 
@@ -189,7 +189,7 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
     return snap
 
 def select_market_best(snap: dict | None, horizon: str, n: int = 5) -> list:
-    """確定性複合鍵排序：分數 > Alpha > 股票代碼 (確保 100% 不變)"""
+    """確定性排序：分數 > Alpha > 股票代碼 (確保 100% 排序穩定)"""
     if not snap or not isinstance(snap, dict): return []
     stocks = snap.get("stocks", [])
     

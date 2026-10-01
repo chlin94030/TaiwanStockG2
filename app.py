@@ -1,6 +1,5 @@
 """
-Taiwan Alpha Radar V12.2 Nordic UI Shell.
-Displays Sub-Industry badges, Monthly Revenue, EPS, Margins, PE, and Institutional/Main-force chip flow.
+Taiwan Alpha Radar V12.3 Nordic UI Shell.
 Run: streamlit run app.py
 """
 from __future__ import annotations
@@ -124,7 +123,7 @@ def card(obj, h, snap, view, chart=None, calendar=None, rank_idx=1):
     summary_sentence = plain_summary(f)
     setup = SETUP_LABELS.get(obj.get("setup"), obj.get("setup", ""))
     
-    sub_ind = obj.get("sub_industry", f"{obj.get('industry','')}-零組件")
+    sub_ind = obj.get("sub_industry", f"{obj.get('industry','')}-產業龍頭")
     eps_q_str = " / ".join([f"{v:.2f}" for v in funds.get("eps_quarters", [1.2, 1.5, 1.8, 2.1])])
 
     st.markdown(f"""
@@ -143,7 +142,6 @@ def card(obj, h, snap, view, chart=None, calendar=None, rank_idx=1):
    <div style="color:#0369a1; font-weight:700;">量化白話解析：<b>{esc(summary_sentence)}</b></div>
  </div>
 
- <!-- 財報與營收基本面面板 -->
  <div class="fund-panel">
    <div class="fund-title">📊 近一年營收與財務基本面</div>
    <div class="fund-grid">
@@ -155,10 +153,9 @@ def card(obj, h, snap, view, chart=None, calendar=None, rank_idx=1):
      <div class="fund-item"><div class="fund-k">毛利率 / 本益比 (P/E)</div><div class="fund-v">{funds.get('gross_margin', 0):.1f}% / {funds.get('pe_ratio', 0):.1f}倍</div></div>
    </div>
    
-   <!-- 三大法人與主力籌碼 -->
    <div class="chip-box">
      <div class="chip-item">🏛️ 近一月三大法人：{chip.get('inst_net_str', '法人籌碼穩定')}</div>
-     <div class="chip-item">🔥 近一月主力買賣：{chip.get('main_force_str', '主力集中吸籌')}</div>
+     <div class="chip-item">🔥 近一月主力買賣：{chip.get('main_force_str', '主力籌碼集中')}</div>
    </div>
  </div>
 
@@ -196,11 +193,11 @@ def render_horizon(snap, h, calendar=None):
         st.info("目前市場環境下無滿足過濾條件之標的。")
 
 def main():
-    st.set_page_config(page_title="Alpha Radar · V12.2 Nordic", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="Alpha Radar · V12.3 Nordic", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
     st.markdown(CSS, unsafe_allow_html=True)
-    st.markdown("""<div class="hero"><div style="letter-spacing:.12em; font-weight:800; color:#93c5fd;">TAIWAN ALPHA RADAR · V12.2 NORDIC</div>
+    st.markdown("""<div class="hero"><div style="letter-spacing:.12em; font-weight:800; color:#93c5fd;">TAIWAN ALPHA RADAR · V12.3 NORDIC</div>
 <h1>全台股收益導向量化選股與個股診斷</h1>
-<p>2,000+ 檔動態母池 × 包含細產業分類、營收 EPS 與三大法人/主力籌碼數據</p></div>""", unsafe_allow_html=True)
+<p>2,000+ 檔動態母池 × 確定性多因子打分 × 合理估計報酬</p></div>""", unsafe_allow_html=True)
     
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     

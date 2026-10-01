@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.2 Radar Service Engine.
-Enriched with Sub-Industry Classification, Monthly Revenue, EPS, Margins, PE, and Institutional/Main-Force Flow.
+Taiwan Alpha Radar V12.2.1 Radar Service Engine.
+Syntax-fixed version for Python f-string parser.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from market_data import DailyPriceStore, fetch_twse_universe, _taipei_timestamp
 from policy_engine import generate_trade_plan, evaluate_entry_state
 from return_first_model import estimate_horizon_return, ModelDataError
 
-OPERATIONS_VERSION = "v12.2.0-operations"
+OPERATIONS_VERSION = "v12.2.1-operations"
 
 @dataclass
 class RunSettings:
@@ -97,6 +97,12 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
                 inst_net = round(vol_sum_20d * 0.28 * vol_direction, 0)
                 main_net = round(vol_sum_20d * 0.35 * vol_direction, 0)
                 
+                inst_sign = "+" if inst_net >= 0 else ""
+                inst_status = "法人連續布局" if inst_net >= 0 else "法人調節賣超"
+                
+                main_sign = "+" if main_net >= 0 else ""
+                main_status = "主力籌碼集中" if main_net >= 0 else "主力籌碼渙散"
+                
                 candidate_list.append({
                     "ticker": ticker,
                     "name": row["name"],
@@ -115,8 +121,8 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
                         "pe_ratio": round(float(np.clip(p / (max(0.8, p * 0.038) + 1e-4), 8.0, 45.0)), 1)
                     },
                     "chip_flow": {
-                        "inst_net_str": f"{'+' if inst_net>=0 else ''}{inst_net:,.0f} 張 ({'法人連續布局' if inst_net>=0 else '法人調節賣超'})",
-                        "main_force_str": f"{'+' if main_force_net_str:=main_net>=0 else ''}{main_net:,.0f} 張 ({'主力籌碼集中' if main_net>=0 else '主力籌碼渙散'})"
+                        "inst_net_str": f"{inst_sign}{inst_net:,.0f} 張 ({inst_status})",
+                        "main_force_str": f"{main_sign}{main_net:,.0f} 張 ({main_status})"
                     }
                 })
     

@@ -1,6 +1,6 @@
 """
 Taiwan Alpha Radar V12.3 Return-First Model Core.
-Smooth Log Volume Surge & Downside Risk Penalty.
+Includes Bounded Drift Rates & Winsorization to Prevent Exponential Return Explosion.
 """
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
     p_now = close[-1]
     p_5d = close[-5] if n_samples >= 5 else p_now
     p_20d = close[-20] if n_samples >= 20 else p_now
-    p_60d = close[-60] if n_samples >= 60 else p_20d
+    p_60d = close[-60] if n_samples >= 60 else p_now
     
     ret_5d = (p_now - p_5d) / p_5d if p_5d > 0 else 0.0
     ret_20d = (p_now - p_20d) / p_20d if p_20d > 0 else 0.0
@@ -45,7 +45,7 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
     vol_5d = vols.iloc[-5:].mean() if len(vols) >= 5 else 1.0
     vol_20d = vols.iloc[-20:].mean() if len(vols) >= 20 else 1.0
     
-    # 對數化量能平滑，避免低價股倍數誇張虛高
+    # 對數化成交量平滑，防止低價股爆量虛高倍數
     smooth_vol_surge = np.log1p(vol_5d) / (np.log1p(vol_20d) + 1e-4)
     
     rs_20d = ret_20d - twii_ret_20d
@@ -54,13 +54,17 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
     recent_rets = rets.tail(min(n_samples, 60)).to_numpy()
     vol_daily = max(1e-6, np.std(recent_rets, ddof=1))
     
-    # 波動度扣分：防範暴起暴落妖股
+    # 高波動度懲罰
     vol_penalty = max(0.0, 1.0 - max(0.0, vol_daily - 0.032) / 0.02)
     
-    if p_now >= ma5 >= ma20 >= ma60: ma_quality = 1.0
-    elif p_now >= ma20 >= ma60: ma_quality = 0.8
-    elif p_now >= ma20: ma_quality = 0.5
-    else: ma_quality = 0.1
+    if p_now >= ma5 >= ma20 >= ma60:
+        ma_quality = 1.0
+    elif p_now >= ma20 >= ma60:
+        ma_quality = 0.8
+    elif p_now >= ma20:
+        ma_quality = 0.5
+    else:
+        ma_quality = 0.1
 
     if horizon == "short":
         days = 10
@@ -69,7 +73,10 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         f_rs = min(1.0, max(0.0, (rs_20d + 0.01) / 0.06)) * 25.0
         f_quality = (ma_quality * 0.6 + vol_penalty * 0.4) * 20.0
         composite_score = f_vol + f_mom + f_rs + f_quality
-        daily_drift = (ret_5d / 5.0) * (composite_score / 50.0)
+        
+        # 限制每日預期漂移率，防止複利爆炸
+        daily_drift = np.clip((ret_5d / 5.0) * (composite_score / 60.0), -0.010, 0.012)
+        max_cap = 0.20  # 短線最大預期報酬率上限 +20%
         
     elif horizon == "mid":
         days = 40
@@ -78,7 +85,9 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         f_sharpe = min(1.0, max(0.0, (ret_20d / (vol_daily * 4.47) + 0.2) / 1.8)) * 20.0
         f_quality = vol_penalty * 15.0
         composite_score = f_trend + f_rs + f_sharpe + f_quality
-        daily_drift = (ret_20d / 20.0) * (composite_score / 50.0)
+        
+        daily_drift = np.clip((ret_20d / 20.0) * (composite_score / 60.0), -0.008, 0.009)
+        max_cap = 0.40  # 中線最大預期報酬率上限 +40%
         
     else:  # long
         days = 120
@@ -88,9 +97,15 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         f_vol_drag = vol_penalty * 30.0
         f_alpha = min(1.0, max(0.0, (ret_60d + 0.02) / 0.22)) * 30.0
         composite_score = f_trend + f_vol_drag + f_alpha
-        daily_drift = geom_drift * (composite_score / 50.0)
+        
+        daily_drift = np.clip(geom_drift * (composite_score / 60.0), -0.005, 0.006)
+        max_cap = 0.75  # 長線最大預期報酬率上限 +75%
 
-    raw_return = (1.0 + max(-0.005, daily_drift)) ** days - 1.0
+    raw_return = (1.0 + daily_drift) ** days - 1.0
+    
+    # 執行合理天花板截斷 (Winsorization)
+    raw_return = float(np.clip(raw_return, -0.50, max_cap))
+    
     total_cost = settings.commission * 2 + settings.sell_tax + settings.slippage * 2
     net_ev = raw_return - total_cost
     
@@ -111,7 +126,7 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         "strategy": {
             "mean": round(finite_scalar(net_ev), 4),
             "median": round(finite_scalar(net_ev * 0.82), 4),
-            "p75": round(finite_scalar(net_ev * 1.38), 4),
+            "p75": round(finite_scalar(net_ev * 1.35), 4),
             "p10": round(finite_scalar(horizon_p10), 4),
             "expected_shortfall10_loss": round(finite_scalar(horizon_es10_loss), 4)
         },

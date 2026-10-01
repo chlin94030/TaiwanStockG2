@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.1 Return-First Model Core.
-Enhanced with Trend Quality, Volatility Penalty, and Quality Momentum Factors.
+Taiwan Alpha Radar V12.3 Return-First Model Core.
+Smooth Log Volume Surge & Downside Risk Penalty.
 """
 from __future__ import annotations
 
@@ -44,36 +44,30 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
     
     vol_5d = vols.iloc[-5:].mean() if len(vols) >= 5 else 1.0
     vol_20d = vols.iloc[-20:].mean() if len(vols) >= 20 else 1.0
-    vol_surge = vol_5d / (vol_20d + 1e-4)
     
-    # 相對強勢度 (RS)
+    # 對數化量能平滑，避免低價股倍數誇張虛高
+    smooth_vol_surge = np.log1p(vol_5d) / (np.log1p(vol_20d) + 1e-4)
+    
     rs_20d = ret_20d - twii_ret_20d
     is_strong_rs = rs_20d > 0.0
     
-    # 波動度與趨勢品質計算
     recent_rets = rets.tail(min(n_samples, 60)).to_numpy()
     vol_daily = max(1e-6, np.std(recent_rets, ddof=1))
     
-    # 波動度懲罰：日波動度超過 3.5% 扣分（過濾妖股暴起暴落）
-    vol_penalty = max(0.0, 1.0 - max(0.0, vol_daily - 0.035) / 0.02)
+    # 波動度扣分：防範暴起暴落妖股
+    vol_penalty = max(0.0, 1.0 - max(0.0, vol_daily - 0.032) / 0.02)
     
-    # 均線多頭排列品質打分 (0.0 ~ 1.0)
-    if p_now >= ma5 >= ma20 >= ma60:
-        ma_quality = 1.0
-    elif p_now >= ma20 >= ma60:
-        ma_quality = 0.8
-    elif p_now >= ma20:
-        ma_quality = 0.5
-    else:
-        ma_quality = 0.1
+    if p_now >= ma5 >= ma20 >= ma60: ma_quality = 1.0
+    elif p_now >= ma20 >= ma60: ma_quality = 0.8
+    elif p_now >= ma20: ma_quality = 0.5
+    else: ma_quality = 0.1
 
     if horizon == "short":
         days = 10
-        f_vol = min(1.0, max(0.0, (vol_surge - 0.9) / 1.1)) * 30.0
+        f_vol = min(1.0, max(0.0, (smooth_vol_surge - 0.95) / 0.2)) * 30.0
         f_mom = min(1.0, max(0.0, (ret_5d + 0.01) / 0.07)) * 25.0
         f_rs = min(1.0, max(0.0, (rs_20d + 0.01) / 0.06)) * 25.0
         f_quality = (ma_quality * 0.6 + vol_penalty * 0.4) * 20.0
-        
         composite_score = f_vol + f_mom + f_rs + f_quality
         daily_drift = (ret_5d / 5.0) * (composite_score / 50.0)
         
@@ -83,7 +77,6 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         f_rs = min(1.0, max(0.0, (rs_20d + 0.01) / 0.08)) * 30.0
         f_sharpe = min(1.0, max(0.0, (ret_20d / (vol_daily * 4.47) + 0.2) / 1.8)) * 20.0
         f_quality = vol_penalty * 15.0
-        
         composite_score = f_trend + f_rs + f_sharpe + f_quality
         daily_drift = (ret_20d / 20.0) * (composite_score / 50.0)
         
@@ -91,11 +84,9 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         days = 120
         ma_long_align = 1.0 if (p_now >= ma20 >= ma60 >= ma120) else (0.6 if p_now >= ma60 else 0.2)
         geom_drift = (ret_60d / 60.0) - 0.5 * (vol_daily ** 2)
-        
         f_trend = ma_long_align * 40.0
         f_vol_drag = vol_penalty * 30.0
         f_alpha = min(1.0, max(0.0, (ret_60d + 0.02) / 0.22)) * 30.0
-        
         composite_score = f_trend + f_vol_drag + f_alpha
         daily_drift = geom_drift * (composite_score / 50.0)
 

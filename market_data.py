@@ -47,7 +47,7 @@ def fetch_twse_universe() -> pd.DataFrame:
                 name = item.get("Name", "").strip()
                 if len(code) == 4 and code.isdigit():
                     t_symbol = f"{code}.TW"
-                    ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", f"電子中游-產業龍頭"))
+                    ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", "電子中游-產業龍頭"))
                     tickers.append((t_symbol, name, ind, sub_ind))
     except Exception: pass
 
@@ -61,7 +61,7 @@ def fetch_twse_universe() -> pd.DataFrame:
                 name = item.get("Company Name", "").strip()
                 if len(code) == 4 and code.isdigit():
                     t_symbol = f"{code}.TWO"
-                    ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", f"電子上游-關鍵零組件"))
+                    ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", "電子上游-關鍵零組件"))
                     tickers.append((t_symbol, name, ind, sub_ind))
     except Exception: pass
 

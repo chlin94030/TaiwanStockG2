@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar Market Data Engine V12.2.
-Provides TWSE/TPEx Open Data with Detailed Sub-Industry Classifications.
+Taiwan Alpha Radar Market Data Engine V12.3.
+Full TWSE/TPEx Open Data with Deterministic Mapping.
 """
 from __future__ import annotations
 
@@ -17,29 +17,26 @@ def _taipei_timestamp() -> datetime.datetime:
     return datetime.datetime.now(tz)
 
 SUB_INDUSTRY_MAP = {
-    "2330.TW": ("半導體", "電子上游-IC-代工"),
-    "2454.TW": ("半導體", "電子上游-IC-設計"),
-    "2317.TW": ("其他電子", "電子中游-EMS"),
-    "2382.TW": ("電腦周邊", "電子中游-AI伺服器"),
-    "3231.TW": ("電腦周邊", "電子中游-代工組裝"),
+    "2330.TW": ("半導體", "半導體-晶圓代工龍頭"),
+    "2454.TW": ("半導體", "電子上游-IC設計"),
+    "2317.TW": ("其他電子", "電子中游-EMS垂直整合"),
+    "2382.TW": ("電腦周邊", "電子中游-AI伺服器代工"),
     "3017.TW": ("電機機械", "電子中游-水冷散熱"),
-    "6669.TW": ("電腦周邊", "電子中游-伺服器機箱"),
-    "1519.TW": ("電機機械", "重電綠能-變壓器"),
-    "2308.TW": ("電子零組件", "電子中游-電源供應器"),
-    "2379.TW": ("半導體", "電子上游-IC-設計"),
-    "3034.TW": ("半導體", "電子上游-驅動IC"),
+    "1519.TW": ("電機機械", "重電綠能-變壓器外銷"),
+    "2881.TW": ("金融保險", "金融金控-金控龍頭"),
+    "2882.TW": ("金融保險", "金融金控-金控龍頭"),
+    "2891.TW": ("金融保險", "金融金控-銀行金控"),
     "2327.TW": ("電子零組件", "電子上游-被動元件"),
     "3037.TW": ("電子零組件", "電子上游-ABF載板"),
-    "2408.TW": ("半導體", "電子上游-DRAM記憶體"),
-    "2603.TW": ("航運業", "傳產-貨櫃航運"),
-    "2002.TW": ("鋼鐵工業", "傳產-鋼鐵板材"),
-    "1301.TW": ("塑膠工業", "傳產-石化原料")
+    "2308.TW": ("電子零組件", "電子中游-電源與冷卻"),
+    "1476.TW": ("紡織纖維", "傳產龍頭-成衣紡織"),
+    "2618.TW": ("航運業", "交通航運-航空客貨運"),
+    "6768.TW": ("運動休閒", "傳產龍頭-鞋履製造")
 }
 
 def fetch_twse_universe() -> pd.DataFrame:
     tickers = []
     
-    # 1. 抓取 TWSE 上市股票
     try:
         url_twse = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
         res = requests.get(url_twse, timeout=8)
@@ -50,11 +47,10 @@ def fetch_twse_universe() -> pd.DataFrame:
                 name = item.get("Name", "").strip()
                 if len(code) == 4 and code.isdigit():
                     t_symbol = f"{code}.TW"
-                    ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", f"電子中游-關鍵零組件"))
+                    ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", f"電子中游-產業龍頭"))
                     tickers.append((t_symbol, name, ind, sub_ind))
     except Exception: pass
 
-    # 2. 抓取 TPEx 上櫃股票
     try:
         url_tpex = "https://www.tpex.org.tw/openapi/v1/mopsfront_t187ap03_O"
         res_tpex = requests.get(url_tpex, timeout=8)
@@ -65,18 +61,18 @@ def fetch_twse_universe() -> pd.DataFrame:
                 name = item.get("Company Name", "").strip()
                 if len(code) == 4 and code.isdigit():
                     t_symbol = f"{code}.TWO"
-                    ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", f"電子上游-材料模組"))
+                    ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", f"電子上游-關鍵零組件"))
                     tickers.append((t_symbol, name, ind, sub_ind))
     except Exception: pass
 
     if not tickers:
         backup = [
-            ("2330.TW", "台積電", "半導體", "電子上游-IC-代工"),
-            ("2317.TW", "鴻海", "其他電子", "電子中游-EMS"),
-            ("2454.TW", "聯發科", "半導體", "電子上游-IC-設計"),
-            ("2382.TW", "廣達", "電腦周邊", "電子中游-AI伺服器"),
+            ("2330.TW", "台積電", "半導體", "半導體-晶圓代工龍頭"),
+            ("2317.TW", "鴻海", "其他電子", "電子中游-EMS垂直整合"),
+            ("2881.TW", "富邦金", "金融保險", "金融金控-金控龍頭"),
+            ("2382.TW", "廣達", "電腦周邊", "電子中游-AI伺服器代工"),
             ("3017.TW", "奇鋐", "電機機械", "電子中游-水冷散熱"),
-            ("1519.TW", "華城", "電機機械", "重電綠能-變壓器")
+            ("1519.TW", "華城", "電機機械", "重電綠能-變壓器外銷")
         ]
         return pd.DataFrame(backup, columns=["ticker", "name", "industry", "sub_industry"])
 

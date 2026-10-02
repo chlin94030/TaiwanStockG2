@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar Market Data Engine V12.3.
-Full TWSE/TPEx Open Data with Deterministic Mapping.
+Taiwan Alpha Radar Market Data Engine V12.4.
+Forces Daily Updates & Direct OpenAPI Synchronizations.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _taipei_timestamp() -> datetime.datetime:
 SUB_INDUSTRY_MAP = {
     "2330.TW": ("半導體", "半導體-晶圓代工龍頭"),
     "2454.TW": ("半導體", "電子上游-IC設計"),
-    "2317.TW": ("其他電子", "電子中游-EMS垂直整合"),
+    "2317.TW": ("其他電子", "電子中游-EMS代工組裝"),
     "2382.TW": ("電腦周邊", "電子中游-AI伺服器代工"),
     "3017.TW": ("電機機械", "電子中游-水冷散熱"),
     "1519.TW": ("電機機械", "重電綠能-變壓器外銷"),
@@ -29,9 +29,9 @@ SUB_INDUSTRY_MAP = {
     "2327.TW": ("電子零組件", "電子上游-被動元件"),
     "3037.TW": ("電子零組件", "電子上游-ABF載板"),
     "2308.TW": ("電子零組件", "電子中游-電源與冷卻"),
-    "1476.TW": ("紡織纖維", "傳產龍頭-成衣紡織"),
+    "1476.TW": ("紡織纖維", "傳統產業-成衣紡織龍頭"),
     "2618.TW": ("航運業", "交通航運-航空客貨運"),
-    "6768.TW": ("運動休閒", "傳產龍頭-鞋履製造")
+    "6768.TW": ("運動休閒", "傳統產業-製鞋龍頭")
 }
 
 def fetch_twse_universe() -> pd.DataFrame:
@@ -68,7 +68,7 @@ def fetch_twse_universe() -> pd.DataFrame:
     if not tickers:
         backup = [
             ("2330.TW", "台積電", "半導體", "半導體-晶圓代工龍頭"),
-            ("2317.TW", "鴻海", "其他電子", "電子中游-EMS垂直整合"),
+            ("2317.TW", "鴻海", "其他電子", "電子中游-EMS代工組裝"),
             ("2881.TW", "富邦金", "金融保險", "金融金控-金控龍頭"),
             ("2382.TW", "廣達", "電腦周邊", "電子中游-AI伺服器代工"),
             ("3017.TW", "奇鋐", "電機機械", "電子中游-水冷散熱"),
@@ -103,10 +103,11 @@ class DailyPriceStore:
             return False
 
     def batch_fetch_and_update(self, tickers: list[str], period: str = "1y") -> None:
-        chunk_size = 100
+        chunk_size = 80
         for i in range(0, len(tickers), chunk_size):
             chunk = tickers[i:i + chunk_size]
             try:
+                # 強制使用 yfinance 抓取至最新一日
                 data = yf.download(chunk, period=period, group_by="ticker", progress=False, threads=True)
                 records = []
                 for t in chunk:

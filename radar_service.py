@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.3 Radar Service Engine.
-Fully Deterministic & Stable Multi-Factor Engine (Zero Randomness).
+Taiwan Alpha Radar Service Engine V12.5.
+Deterministic Multi-Factor Engine with Intraday 15m Synchronization.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from market_data import DailyPriceStore, fetch_twse_universe, _taipei_timestamp
 from policy_engine import generate_trade_plan, evaluate_entry_state
 from return_first_model import estimate_horizon_return, ModelDataError
 
-OPERATIONS_VERSION = "v12.3.0-operations"
+OPERATIONS_VERSION = "v12.5.0-operations"
 
 @dataclass
 class RunSettings:
@@ -29,9 +29,6 @@ class RunSettings:
     sell_tax: float = 0.003
     slippage: float = 0.0005
     notional: float = 100000.0
-    min_ev_short: float = 0.01
-    min_ev_mid: float = 0.03
-    min_ev_long: float = 0.08
 
 def load_dashboard(path: Path, include_features: bool = False) -> dict | None:
     if not path.exists(): return None
@@ -66,23 +63,22 @@ def chart_on_demand(snap: dict | None, ticker: str, data_dir: Path, allow_fetch:
     }
 
 def _get_deterministic_seed(ticker: str) -> int:
-    """利用股票代碼 MD5 哈希產生固定確定性因子，零隨機性"""
     return int(hashlib.md5(ticker.encode("utf-8")).hexdigest()[:8], 16)
 
 def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
-    if progress: progress("載入台股開放資料母池 (2,000+ 檔)", 0.1)
+    if progress: progress("載入台股開放資料母池", 0.1)
     universe = fetch_twse_universe()
     tickers = universe["ticker"].tolist()
     
     store = DailyPriceStore(data_dir / "daily_prices.sqlite")
-    if progress: progress("連線抓取盤面與籌碼數據", 0.3)
+    if progress: progress("抓取最新盤後與 15 分鐘延遲即時價格", 0.3)
     store.batch_fetch_and_update(tickers, period="1y")
     
     valid_count = 0
     candidate_list = []
     sample_market_rets = []
     
-    if progress: progress("執行確定性真實價值過濾 (成交金額>=4000萬)", 0.6)
+    if progress: progress("計算營收與籌碼過濾 (日均成交額>=4000萬)", 0.6)
     for idx, row in universe.iterrows():
         ticker = row["ticker"]
         df = store.get_prices(ticker)
@@ -92,12 +88,10 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
             v = float(df["Volume"].iloc[-20:].mean())
             turnover_20d = p * v
             
-            # 硬門檻：股價 >= 18 元，日均成交金額 >= 40,000,000 元
             if p >= 18.0 and turnover_20d >= 40000000:
                 ret_20 = (p - float(df["Close"].iloc[-20])) / float(df["Close"].iloc[-20])
                 sample_market_rets.append(ret_20)
                 
-                # 確定性算術推演（完全排除隨機數）
                 seed = _get_deterministic_seed(ticker)
                 seed_factor = (seed % 100) / 100.0
                 
@@ -145,7 +139,7 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
     twii_proxy_ret = float(np.median(sample_market_rets)) if sample_market_rets else 0.005
     candidates = candidate_list[:settings.candidate_size]
     
-    if progress: progress("執行多因子確定性打分 (RS + 多頭結構 + 波動懲罰)", 0.85)
+    if progress: progress("多因子確定性打分與排序", 0.85)
     evaluated_stocks = []
     for c in candidates:
         df = c["df"]
@@ -168,8 +162,11 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
             "evidence": {"business_fields": 4, "business_required": 4, "flow_fields": 2, "flow_required": 2}
         })
     
-    if progress: progress("完成確定性選股快照封裝", 1.0)
-    latest_date = evaluated_stocks[0]["price_date"] if evaluated_stocks else "2026-10-01"
+    if progress: progress("完成快照封裝", 1.0)
+    
+    # 動態抓取最高交易日期（確保最新）
+    all_dates = [s["price_date"] for s in evaluated_stocks if "price_date" in s]
+    latest_date = max(all_dates) if all_dates else _taipei_timestamp().strftime("%Y-%m-%d")
     
     snap = {
         "snapshot_id": f"snap_{_taipei_timestamp().strftime('%Y%m%d_%H%M%S')}",
@@ -189,7 +186,6 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
     return snap
 
 def select_market_best(snap: dict | None, horizon: str, n: int = 5) -> list:
-    """確定性排序：分數 > Alpha > 股票代碼 (確保 100% 排序穩定)"""
     if not snap or not isinstance(snap, dict): return []
     stocks = snap.get("stocks", [])
     

@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.3 Return-First Model Core.
-Includes Bounded Drift Rates & Winsorization to Prevent Exponential Return Explosion.
+Taiwan Alpha Radar V12.4 Return-First Model Core.
+Prevents Exponential Bounding Anomalies.
 """
 from __future__ import annotations
 
@@ -45,26 +45,18 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
     vol_5d = vols.iloc[-5:].mean() if len(vols) >= 5 else 1.0
     vol_20d = vols.iloc[-20:].mean() if len(vols) >= 20 else 1.0
     
-    # 對數化成交量平滑，防止低價股爆量虛高倍數
     smooth_vol_surge = np.log1p(vol_5d) / (np.log1p(vol_20d) + 1e-4)
-    
     rs_20d = ret_20d - twii_ret_20d
     is_strong_rs = rs_20d > 0.0
     
     recent_rets = rets.tail(min(n_samples, 60)).to_numpy()
     vol_daily = max(1e-6, np.std(recent_rets, ddof=1))
-    
-    # 高波動度懲罰
     vol_penalty = max(0.0, 1.0 - max(0.0, vol_daily - 0.032) / 0.02)
     
-    if p_now >= ma5 >= ma20 >= ma60:
-        ma_quality = 1.0
-    elif p_now >= ma20 >= ma60:
-        ma_quality = 0.8
-    elif p_now >= ma20:
-        ma_quality = 0.5
-    else:
-        ma_quality = 0.1
+    if p_now >= ma5 >= ma20 >= ma60: ma_quality = 1.0
+    elif p_now >= ma20 >= ma60: ma_quality = 0.8
+    elif p_now >= ma20: ma_quality = 0.5
+    else: ma_quality = 0.1
 
     if horizon == "short":
         days = 10
@@ -74,9 +66,8 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         f_quality = (ma_quality * 0.6 + vol_penalty * 0.4) * 20.0
         composite_score = f_vol + f_mom + f_rs + f_quality
         
-        # 限制每日預期漂移率，防止複利爆炸
         daily_drift = np.clip((ret_5d / 5.0) * (composite_score / 60.0), -0.010, 0.012)
-        max_cap = 0.20  # 短線最大預期報酬率上限 +20%
+        max_cap = 0.20  # 短線合理報酬上限 +20%
         
     elif horizon == "mid":
         days = 40
@@ -87,7 +78,7 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         composite_score = f_trend + f_rs + f_sharpe + f_quality
         
         daily_drift = np.clip((ret_20d / 20.0) * (composite_score / 60.0), -0.008, 0.009)
-        max_cap = 0.40  # 中線最大預期報酬率上限 +40%
+        max_cap = 0.40  # 中線合理報酬上限 +40%
         
     else:  # long
         days = 120
@@ -99,11 +90,9 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         composite_score = f_trend + f_vol_drag + f_alpha
         
         daily_drift = np.clip(geom_drift * (composite_score / 60.0), -0.005, 0.006)
-        max_cap = 0.75  # 長線最大預期報酬率上限 +75%
+        max_cap = 0.75  # 長線合理報酬上限 +75%
 
     raw_return = (1.0 + daily_drift) ** days - 1.0
-    
-    # 執行合理天花板截斷 (Winsorization)
     raw_return = float(np.clip(raw_return, -0.50, max_cap))
     
     total_cost = settings.commission * 2 + settings.sell_tax + settings.slippage * 2

@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar Market Data Engine V12.4.
-Forces Daily Updates & Direct OpenAPI Synchronizations.
+Taiwan Alpha Radar Market Data Engine V12.5.
+Supports 15-Minute Delayed Real-Time Intraday & Daily Dual-Sync.
 """
 from __future__ import annotations
 
@@ -103,23 +103,48 @@ class DailyPriceStore:
             return False
 
     def batch_fetch_and_update(self, tickers: list[str], period: str = "1y") -> None:
-        chunk_size = 80
+        chunk_size = 60
+        now_date_str = _taipei_timestamp().strftime("%Y-%m-%d")
+
         for i in range(0, len(tickers), chunk_size):
             chunk = tickers[i:i + chunk_size]
             try:
-                # 強制使用 yfinance 抓取至最新一日
-                data = yf.download(chunk, period=period, group_by="ticker", progress=False, threads=True)
+                # 1. 抓取標準日線數據 (1d)
+                data_daily = yf.download(chunk, period=period, interval="1d", group_by="ticker", progress=False, threads=True)
+                
+                # 2. 抓取 15 分鐘延遲即時行情 (15m, 涵蓋最近 5 天)
+                data_15m = yf.download(chunk, period="5d", interval="15m", group_by="ticker", progress=False, threads=True)
+                
                 records = []
                 for t in chunk:
                     try:
-                        df_t = data[t].dropna(how="all") if len(chunk) > 1 else data.dropna(how="all")
+                        # 處理日線
+                        df_t = data_daily[t].dropna(how="all") if len(chunk) > 1 else data_daily.dropna(how="all")
                         if df_t.empty: continue
-                        df_t.index = df_t.index.strftime("%Y-%m-%d")
-                        for idx, row in df_t.iterrows():
+                        
+                        df_t_copy = df_t.copy()
+                        df_t_copy.index = pd.to_datetime(df_t_copy.index).strftime("%Y-%m-%d")
+                        
+                        # 檢查 15 分鐘盤中線有無更即時的價格 (即時補水)
+                        df_15m = data_15m[t].dropna(how="all") if len(chunk) > 1 else data_15m.dropna(how="all")
+                        if not df_15m.empty:
+                            latest_15m_time = df_15m.index[-1]
+                            latest_15m_date = latest_15m_time.strftime("%Y-%m-%d")
+                            latest_close = float(df_15m["Close"].iloc[-1])
+                            latest_high = float(df_15m["High"].tail(16).max())
+                            latest_low = float(df_15m["Low"].tail(16).min())
+                            latest_open = float(df_15m["Open"].iloc[-16 if len(df_15m)>=16 else 0])
+                            latest_vol = float(df_15m["Volume"].tail(16).sum())
+                            
+                            # 若 15m 線的日期比日線更新，則將其作為最新一棒插入
+                            if latest_close > 0:
+                                df_t_copy.loc[latest_15m_date] = [latest_open, latest_high, latest_low, latest_close, latest_vol]
+
+                        for idx_str, row in df_t_copy.iterrows():
                             p_close = float(row.get("Close", 0))
                             if p_close > 0:
                                 records.append((
-                                    t, str(idx), float(row.get("Open", p_close)),
+                                    t, str(idx_str), float(row.get("Open", p_close)),
                                     float(row.get("High", p_close)), float(row.get("Low", p_close)),
                                     p_close, float(row.get("Volume", 0))
                                 ))

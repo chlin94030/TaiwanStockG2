@@ -1,5 +1,5 @@
 """
-Taiwan Alpha Radar V12.4 Mobile Nordic UI Shell.
+Taiwan Alpha Radar V12.6 Mobile UI.
 Run: streamlit run app.py
 """
 from __future__ import annotations
@@ -30,14 +30,12 @@ SETUP_LABELS = {"BREAKOUT": "突破整理平台", "PULLBACK": "拉回均線支�
 STATE_LABELS = {"CONDITIONS_MET_NOT_FILLED": "今日收盤符合條件 · 次日開盤進場", "WAIT_ENTRY_ZONE": "等待回測最佳布局價位"}
 HOLD_LABELS = {"ORIGINAL_RULES_NOT_BREACHED_NOT_A_RETURN_GUARANTEE": "✅ 尚未跌破防守價位，按紀律續抱"}
 
-# 手機版大字體與優化對比 CSS
 CSS = """
 <style>
 :root { --slate-900:#0f172a; --slate-800:#1e293b; --slate-600:#475569; --blue-600:#2563eb; }
 html, body, .stApp { background:#f8fafc; color:#0f172a; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 18px; }
 .block-container { max-width: 1000px; padding-top: 1rem; padding-bottom: 4rem; }
 
-/* 手機適配標題與大卡片 */
 .hero { padding: 24px 20px; border-radius: 20px; background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); color: white; margin-bottom: 18px; }
 .hero h1 { font-size: 2.2rem; font-weight: 900; color: white; margin: 0.4rem 0; line-height: 1.2; }
 .hero p { font-size: 1.15rem; color: #cbd5e1; margin: 0; }
@@ -53,7 +51,6 @@ html, body, .stApp { background:#f8fafc; color:#0f172a; font-family:-apple-syste
 .badge-blue { color: #1e40af; background: #dbeafe; }
 .badge-emerald { color: #065f46; background: #d1fae5; }
 
-/* 基本面面板大字體 */
 .fund-panel { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 16px; padding: 18px; margin: 16px 0; }
 .fund-title { font-size: 1.25rem; font-weight: 900; color: #0f172a; margin-bottom: 12px; }
 .fund-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
@@ -73,7 +70,6 @@ html, body, .stApp { background:#f8fafc; color:#0f172a; font-family:-apple-syste
 .level .k { font-size: 1rem; font-weight: 700; color: #64748b; }
 .level .v { font-weight: 900; font-size: 1.35rem; color: #0f172a; margin-top: 2px; }
 
-/* Streamlit 按鈕大字體手機調整 */
 .stButton>button { font-size: 1.25rem !important; font-weight: 900 !important; padding: 12px 20px !important; border-radius: 14px !important; }
 
 @media(max-width: 650px){
@@ -94,7 +90,6 @@ def money(value):
     return "—" if not np.isfinite(v) else f"{v:,.2f}".rstrip("0").rstrip(".")
 
 def render_chart(chart, plan, key):
-    """僅繪製 K線 + 5/20/60日均線 + 成交量（絕無 KD、MACD 等複雜指標）"""
     if not chart or "ohlcv" not in chart: return
     df = pd.DataFrame(chart["ohlcv"], columns=["Open", "High", "Low", "Close", "Volume"])
     dates = chart.get("dates", [])
@@ -106,15 +101,11 @@ def render_chart(chart, plan, key):
     df["MA60"] = close.rolling(60).mean()
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.75, 0.25])
-    
-    # 1. K線圖與三條均線
     fig.add_trace(go.Candlestick(x=dates, open=df.Open, high=df.High, low=df.Low, close=df.Close,
                                 increasing_line_color="#ef4444", decreasing_line_color="#10b981", name="K線"), row=1, col=1)
     fig.add_trace(go.Scatter(x=dates, y=df.MA5, line=dict(color="#f59e0b", width=1.5), name="5日線"), row=1, col=1)
     fig.add_trace(go.Scatter(x=dates, y=df.MA20, line=dict(color="#2563eb", width=1.5), name="20日線"), row=1, col=1)
     fig.add_trace(go.Scatter(x=dates, y=df.MA60, line=dict(color="#9333ea", width=1.5), name="60日線"), row=1, col=1)
-    
-    # 2. 成交量圖
     fig.add_trace(go.Bar(x=dates, y=df.Volume, marker_color=np.where(df.Close>=df.Open, "#ef4444", "#10b981"), name="成交量"), row=2, col=1)
     
     fig.update_layout(height=420, margin=dict(l=5, r=5, t=10, b=10), showlegend=True, template="plotly_white",
@@ -212,11 +203,11 @@ def render_horizon(snap, h, calendar=None):
             card(obj, h, snap, h, calendar=calendar, rank_idx=idx)
 
 def main():
-    st.set_page_config(page_title="Alpha Radar 簡化大字版", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="Alpha Radar V12.6", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
     st.markdown(CSS, unsafe_allow_html=True)
     st.markdown("""<div class="hero">
 <h1>全台股量化選股與個股診斷</h1>
-<p>2,000+ 檔動態過濾 × 確定性多因子打分 × 剔除飆股暴衝失真</p></div>""", unsafe_allow_html=True)
+<p>2,000+ 檔動態過濾 × 基本面護城河 × 剔除飆股暴衝失真</p></div>""", unsafe_allow_html=True)
     
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     
@@ -232,7 +223,7 @@ def main():
 
     with st.sidebar:
         st.markdown("### 系統控制台")
-        if st.button("🔄 強制清理資料庫（解決日期卡住問題）", key="clear_prices_v12"):
+        if st.button("🔄 強制清理資料庫（重置快照）", key="clear_prices_v12"):
             DailyPriceStore(DATA_DIR / "daily_prices.sqlite").clear()
             service.remove_saved_dashboard(DATA_DIR / "dashboard_snapshot.json")
             st.session_state.pop("v8_snapshot", None)

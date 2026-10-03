@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.4 Return-First Model Core.
-Prevents Exponential Bounding Anomalies.
+Taiwan Alpha Radar V12.6 Return-First Model Core.
+Includes Fundamental Quality Moat & Long-Term Trend Alignment.
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         composite_score = f_vol + f_mom + f_rs + f_quality
         
         daily_drift = np.clip((ret_5d / 5.0) * (composite_score / 60.0), -0.010, 0.012)
-        max_cap = 0.20  # 短線合理報酬上限 +20%
+        max_cap = 0.20
         
     elif horizon == "mid":
         days = 40
@@ -78,19 +78,20 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         composite_score = f_trend + f_rs + f_sharpe + f_quality
         
         daily_drift = np.clip((ret_20d / 20.0) * (composite_score / 60.0), -0.008, 0.009)
-        max_cap = 0.40  # 中線合理報酬上限 +40%
+        max_cap = 0.40
         
     else:  # long
         days = 120
-        ma_long_align = 1.0 if (p_now >= ma20 >= ma60 >= ma120) else (0.6 if p_now >= ma60 else 0.2)
+        # 長線必須有嚴格的均線多頭排列
+        ma_long_align = 1.0 if (p_now >= ma20 >= ma60 >= ma120) else (0.5 if p_now >= ma60 else 0.1)
         geom_drift = (ret_60d / 60.0) - 0.5 * (vol_daily ** 2)
-        f_trend = ma_long_align * 40.0
-        f_vol_drag = vol_penalty * 30.0
+        f_trend = ma_long_align * 45.0
+        f_vol_drag = vol_penalty * 25.0
         f_alpha = min(1.0, max(0.0, (ret_60d + 0.02) / 0.22)) * 30.0
         composite_score = f_trend + f_vol_drag + f_alpha
         
         daily_drift = np.clip(geom_drift * (composite_score / 60.0), -0.005, 0.006)
-        max_cap = 0.75  # 長線合理報酬上限 +75%
+        max_cap = 0.65
 
     raw_return = (1.0 + daily_drift) ** days - 1.0
     raw_return = float(np.clip(raw_return, -0.50, max_cap))

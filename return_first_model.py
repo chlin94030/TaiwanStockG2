@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.6 Return-First Model Core.
-Includes Fundamental Quality Moat & Long-Term Trend Alignment.
+Taiwan Alpha Radar V12.8 Return-First Model Core.
+Includes Long-Term Trend Alignment & Drift Winsorization.
 """
 from __future__ import annotations
 
@@ -78,23 +78,23 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         composite_score = f_trend + f_rs + f_sharpe + f_quality
         
         daily_drift = np.clip((ret_20d / 20.0) * (composite_score / 60.0), -0.008, 0.009)
-        max_cap = 0.40
+        max_cap = 0.35
         
     else:  # long
         days = 120
-        # 長線必須有嚴格的均線多頭排列
-        ma_long_align = 1.0 if (p_now >= ma20 >= ma60 >= ma120) else (0.5 if p_now >= ma60 else 0.1)
+        # 長線強制檢核：MA20 >= MA60 >= MA120 多頭排列
+        ma_long_align = 1.0 if (p_now >= ma20 >= ma60 >= ma120) else (0.4 if p_now >= ma60 else 0.0)
         geom_drift = (ret_60d / 60.0) - 0.5 * (vol_daily ** 2)
-        f_trend = ma_long_align * 45.0
-        f_vol_drag = vol_penalty * 25.0
+        f_trend = ma_long_align * 50.0
+        f_vol_drag = vol_penalty * 20.0
         f_alpha = min(1.0, max(0.0, (ret_60d + 0.02) / 0.22)) * 30.0
         composite_score = f_trend + f_vol_drag + f_alpha
         
-        daily_drift = np.clip(geom_drift * (composite_score / 60.0), -0.005, 0.006)
-        max_cap = 0.65
+        daily_drift = np.clip(geom_drift * (composite_score / 60.0), -0.005, 0.005)
+        max_cap = 0.50
 
     raw_return = (1.0 + daily_drift) ** days - 1.0
-    raw_return = float(np.clip(raw_return, -0.50, max_cap))
+    raw_return = float(np.clip(raw_return, -0.40, max_cap))
     
     total_cost = settings.commission * 2 + settings.sell_tax + settings.slippage * 2
     net_ev = raw_return - total_cost

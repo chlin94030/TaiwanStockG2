@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar Market Data Engine V12.6.
-Enhanced Tech & AI Chain Sub-Industry Mapping.
+Taiwan Alpha Radar Market Data Engine V12.8.
+OpenData & Realtime Dual-Sync Engine.
 """
 from __future__ import annotations
 

@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.8 Service Engine.
-Strict Industry Blacklist & Institutional Liquidity Filter (>= 1.5B NTD).
+Taiwan Alpha Radar V12.9 Service Engine.
+Includes Cross-Horizon Deduplication & Exclusion Filtering.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from market_data import DailyPriceStore, fetch_twse_universe, _taipei_timestamp
 from policy_engine import generate_trade_plan, evaluate_entry_state
 from return_first_model import estimate_horizon_return, ModelDataError
 
-OPERATIONS_VERSION = "v12.8.0-operations"
+OPERATIONS_VERSION = "v12.9.0-operations"
 
 @dataclass
 class RunSettings:
@@ -65,7 +65,6 @@ def chart_on_demand(snap: dict | None, ticker: str, data_dir: Path, allow_fetch:
 def _get_deterministic_seed(ticker: str) -> int:
     return int(hashlib.md5(ticker.encode("utf-8")).hexdigest()[:8], 16)
 
-# 官方產業硬性排除黑名單
 EXCLUDED_INDUSTRIES = {"鋼鐵工業", "化學工業", "建材營造", "玻璃陶瓷", "橡膠工業", "生技醫療業"}
 
 def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
@@ -88,7 +87,6 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
         stock_name = row["name"]
         industry_name = row["industry"]
         
-        # 1. 嚴格黑名單過濾：排除傳產鋼鐵/化學/營造、創新板(-創)、冷門飆股
         if industry_name in EXCLUDED_INDUSTRIES or "創" in stock_name or code_num.startswith("20") or code_num.startswith("17"):
             continue
             
@@ -99,7 +97,6 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
             v = float(df["Volume"].iloc[-20:].mean())
             turnover_20d = p * v
             
-            # 2. 硬性流動性門檻：股價 >= 25 元，20日日均成交金額 >= 150,000,000 元 (1.5億)
             if p >= 25.0 and turnover_20d >= 150000000:
                 ret_20 = (p - float(df["Close"].iloc[-20])) / float(df["Close"].iloc[-20])
                 sample_market_rets.append(ret_20)
@@ -196,9 +193,12 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
         
     return snap
 
-def select_market_best(snap: dict | None, horizon: str, n: int = 5) -> list:
+def select_market_best(snap: dict | None, horizon: str, n: int = 5, exclude_tickers: set | None = None) -> list:
+    """支援跨區去重與動態遞補的確定性排序函數"""
     if not snap or not isinstance(snap, dict): return []
     stocks = snap.get("stocks", [])
+    if exclude_tickers is None:
+        exclude_tickers = set()
     
     sorted_stocks = sorted(
         stocks,
@@ -214,6 +214,9 @@ def select_market_best(snap: dict | None, horizon: str, n: int = 5) -> list:
     industry_counts = {}
     
     for s in sorted_stocks:
+        t = s.get("ticker")
+        if t in exclude_tickers:
+            continue
         ind = s.get("industry", "其他")
         count = industry_counts.get(ind, 0)
         if count < 2:
@@ -224,6 +227,9 @@ def select_market_best(snap: dict | None, horizon: str, n: int = 5) -> list:
             
     if len(selected) < n:
         for s in sorted_stocks:
+            t = s.get("ticker")
+            if t in exclude_tickers:
+                continue
             if s not in selected:
                 selected.append(s)
             if len(selected) >= n:

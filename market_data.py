@@ -1,5 +1,5 @@
 """
-Taiwan Alpha Radar Market Data Engine V12.9.
+Taiwan Alpha Radar Market Data Engine V13.0.
 OpenData & Realtime Dual-Sync Engine.
 """
 from __future__ import annotations
@@ -36,9 +36,10 @@ SUB_INDUSTRY_MAP = {
     "2327.TW": ("電子零組件", "電子上游-被動元件龍頭"),
     "3037.TW": ("電子零組件", "電子上游-ABF載板龍頭"),
     "2308.TW": ("電子零組件", "電子中游-電源與冷卻"),
+    "2395.TW": ("電腦周邊", "工業電腦-物聯網龍頭"),
+    "5876.TW": ("金融保險", "金融銀行-高殖利率優等生"),
     "1476.TW": ("紡織纖維", "傳統產業-成衣紡織龍頭"),
-    "2618.TW": ("航運業", "交通航運-航空客貨運龍頭"),
-    "6768.TW": ("運動休閒", "傳統產業-鞋履製造龍頭")
+    "2618.TW": ("航運業", "交通航運-航空客貨運龍頭")
 }
 
 def fetch_twse_universe() -> pd.DataFrame:

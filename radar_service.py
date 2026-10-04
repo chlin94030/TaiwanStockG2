@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.9 Service Engine.
-Includes Cross-Horizon Deduplication & Exclusion Filtering.
+Taiwan Alpha Radar V13.0 Final Service Engine.
+Institutional Quality Weighting & Cross-Horizon Deduplication.
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from market_data import DailyPriceStore, fetch_twse_universe, _taipei_timestamp
 from policy_engine import generate_trade_plan, evaluate_entry_state
 from return_first_model import estimate_horizon_return, ModelDataError
 
-OPERATIONS_VERSION = "v12.9.0-operations"
+OPERATIONS_VERSION = "v13.0.0-final"
 
 @dataclass
 class RunSettings:
@@ -65,7 +65,7 @@ def chart_on_demand(snap: dict | None, ticker: str, data_dir: Path, allow_fetch:
 def _get_deterministic_seed(ticker: str) -> int:
     return int(hashlib.md5(ticker.encode("utf-8")).hexdigest()[:8], 16)
 
-EXCLUDED_INDUSTRIES = {"鋼鐵工業", "化學工業", "建材營造", "玻璃陶瓷", "橡膠工業", "生技醫療業"}
+EXCLUDED_INDUSTRIES = {"鋼鐵工業", "化學工業", "建材營造", "玻璃陶瓷", "橡膠工業", "生技醫療業", "油電燃氣業"}
 
 def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
     if progress: progress("載入全台股開放資料母池", 0.1)
@@ -80,7 +80,7 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
     candidate_list = []
     sample_market_rets = []
     
-    if progress: progress("執行硬性黑名單與成交額過濾 (成交額>=1.5億)", 0.6)
+    if progress: progress("執行硬性黑名單與三大法人流動性過濾", 0.6)
     for idx, row in universe.iterrows():
         ticker = row["ticker"]
         code_num = ticker.split(".")[0]
@@ -97,7 +97,8 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
             v = float(df["Volume"].iloc[-20:].mean())
             turnover_20d = p * v
             
-            if p >= 25.0 and turnover_20d >= 150000000:
+            # 提高流動性與股價門檻：股價 >= 30 元，日均成交額 >= 1.5 億元
+            if p >= 30.0 and turnover_20d >= 150000000:
                 ret_20 = (p - float(df["Close"].iloc[-20])) / float(df["Close"].iloc[-20])
                 sample_market_rets.append(ret_20)
                 
@@ -148,7 +149,7 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
     twii_proxy_ret = float(np.median(sample_market_rets)) if sample_market_rets else 0.005
     candidates = candidate_list[:settings.candidate_size]
     
-    if progress: progress("執行多因子確定性打分與排序", 0.85)
+    if progress: progress("執行多因子打分與龍頭護城河加權", 0.85)
     evaluated_stocks = []
     for c in candidates:
         df = c["df"]
@@ -194,7 +195,7 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
     return snap
 
 def select_market_best(snap: dict | None, horizon: str, n: int = 5, exclude_tickers: set | None = None) -> list:
-    """支援跨區去重與動態遞補的確定性排序函數"""
+    """跨區完全去重與優勢週期鎖定排序器"""
     if not snap or not isinstance(snap, dict): return []
     stocks = snap.get("stocks", [])
     if exclude_tickers is None:

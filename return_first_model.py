@@ -1,5 +1,5 @@
 """
-Taiwan Alpha Radar V12.8 Return-First Model Core.
+Taiwan Alpha Radar V12.9 Return-First Model Core.
 Includes Long-Term Trend Alignment & Drift Winsorization.
 """
 from __future__ import annotations
@@ -82,7 +82,6 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         
     else:  # long
         days = 120
-        # 長線強制檢核：MA20 >= MA60 >= MA120 多頭排列
         ma_long_align = 1.0 if (p_now >= ma20 >= ma60 >= ma120) else (0.4 if p_now >= ma60 else 0.0)
         geom_drift = (ret_60d / 60.0) - 0.5 * (vol_daily ** 2)
         f_trend = ma_long_align * 50.0

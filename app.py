@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.8 Minimalist Mobile UI.
-Overview-First Page & Compact Typography.
+Taiwan Alpha Radar V12.9 Minimalist Mobile UI.
+Overview-First Page with Cross-Horizon Deduplication.
 """
 from __future__ import annotations
 
@@ -179,14 +179,20 @@ def card(obj, h, snap, view, chart=None, calendar=None, rank_idx=1):
         render_chart(chart, plan, f"chart_{view}_{h}_{obj.get('ticker')}_{snap_id}")
 
 def render_overview(snap):
-    st.subheader("📊 跨週期選股精選總覽")
+    st.subheader("📊 跨週期選股精選總覽 (獨立去重版)")
     if not snap or not isinstance(snap, dict):
         st.info("尚無數據，請點擊上方『⚡ 更新最新行情與選股』。")
         return
 
-    short_picks = service.select_market_best(snap, "short", n=5)
-    mid_picks = service.select_market_best(snap, "mid", n=5)
-    long_picks = service.select_market_best(snap, "long", n=5)
+    # 跨週期去重，確保三個週期推薦完全不重複
+    used_tickers = set()
+    short_picks = service.select_market_best(snap, "short", n=5, exclude_tickers=used_tickers)
+    used_tickers.update([s["ticker"] for s in short_picks])
+    
+    mid_picks = service.select_market_best(snap, "mid", n=5, exclude_tickers=used_tickers)
+    used_tickers.update([m["ticker"] for m in mid_picks])
+    
+    long_picks = service.select_market_best(snap, "long", n=5, exclude_tickers=used_tickers)
 
     rows_html = ""
     for i in range(5):
@@ -213,7 +219,7 @@ def main():
     st.markdown(CSS, unsafe_allow_html=True)
     st.markdown("""<div class="hero">
 <h1>台股多因子量化選股系統</h1>
-<p>2,000+ 檔過濾 × 基本面護城河 × 剔除飆股暴衝失真</p></div>""", unsafe_allow_html=True)
+<p>2,000+ 檔過濾 × 基本面護城河 × 跨區去重機制</p></div>""", unsafe_allow_html=True)
     
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     
@@ -299,6 +305,7 @@ def main():
         h_key = {VIEW_LABELS[1]:"short", VIEW_LABELS[2]:"mid", VIEW_LABELS[3]:"long"}[view]
         st.subheader(HORIZON_LABELS.get(h_key, h_key))
         if snap and isinstance(snap, dict):
+            # 單一週期頁籤亦套用去重，避免顯現重複
             picked = service.select_market_best(snap, h_key, n=5)
             for idx, obj in enumerate(picked, 1):
                 card(obj, h_key, snap, h_key, calendar=calendar, rank_idx=idx)

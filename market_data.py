@@ -1,5 +1,5 @@
 """
-Taiwan Alpha Radar Market Data Engine V12.8.
+Taiwan Alpha Radar Market Data Engine V12.9.
 OpenData & Realtime Dual-Sync Engine.
 """
 from __future__ import annotations

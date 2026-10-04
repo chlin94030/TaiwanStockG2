@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V12.9 Minimalist Mobile UI.
-Overview-First Page with Cross-Horizon Deduplication.
+Taiwan Alpha Radar V13.0 Minimalist Mobile UI.
+Full Technical Indicators Rendering Engine.
 """
 from __future__ import annotations
 
@@ -25,10 +25,6 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("ALPHA_RADAR_DATA_DIR", str(ROOT / "data")))
 VIEW_LABELS = ["📊 全景總覽", "⚡ 短線布局", "📈 中線波段", "🧭 長線配置", "🔎 持股診斷"]
 HORIZON_LABELS = {"short": "短線 · 10日", "mid": "中線 · 40日", "long": "長線 · 120日"}
-FAMILY_LABELS = {"價量與基本面綜合": "price_only"}
-SETUP_LABELS = {"BREAKOUT": "突破平台", "PULLBACK": "回測支撐", "RECLAIM": "站回均線"}
-STATE_LABELS = {"CONDITIONS_MET_NOT_FILLED": "今日收盤符合 · 明日進場", "WAIT_ENTRY_ZONE": "等待回到買進區"}
-HOLD_LABELS = {"ORIGINAL_RULES_NOT_BREACHED_NOT_A_RETURN_GUARANTEE": "✅ 尚未跌破防守價，按紀律續抱"}
 
 CSS = """
 <style>
@@ -88,27 +84,92 @@ def money(value):
     return "—" if not np.isfinite(v) else f"{v:,.2f}".rstrip("0").rstrip(".")
 
 def render_chart(chart, plan, key):
+    """繪製包含 K線+4MA+布林通道+KD+MACD 之完整全功能圖表"""
     if not chart or "ohlcv" not in chart: return
     df = pd.DataFrame(chart["ohlcv"], columns=["Open", "High", "Low", "Close", "Volume"])
     dates = chart.get("dates", [])
-    if df.empty: return
+    if df.empty or len(df) < 10: return
 
     close = df["Close"]
+    high = df["High"]
+    low = df["Low"]
+
+    # 1. 完整四均線系統 (5MA, 20MA, 60MA, 120MA)
     df["MA5"] = close.rolling(5).mean()
     df["MA20"] = close.rolling(20).mean()
     df["MA60"] = close.rolling(60).mean()
+    df["MA120"] = close.rolling(120).mean()
 
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.05, row_heights=[0.75, 0.25])
+    # 2. 布林通道 (20MA ± 2SD)
+    std20 = close.rolling(20).std()
+    df["BB_Upper"] = df["MA20"] + 2 * std20
+    df["BB_Lower"] = df["MA20"] - 2 * std20
+
+    # 3. KD 指標 (9, 3, 3)
+    low9 = low.rolling(9).min()
+    high9 = high.rolling(9).max()
+    rsv = np.where(high9 == low9, 50, (close - low9) / (high9 - low9 + 1e-8) * 100)
+    
+    k_list, d_list = [50.0], [50.0]
+    for val in rsv:
+        if np.isnan(val):
+            k_list.append(50.0)
+            d_list.append(50.0)
+        else:
+            k_val = (2/3) * k_list[-1] + (1/3) * val
+            d_val = (2/3) * d_list[-1] + (1/3) * k_val
+            k_list.append(k_val)
+            d_list.append(d_val)
+    df["K"] = k_list[1:]
+    df["D"] = d_list[1:]
+
+    # 4. MACD 指標 (12, 26, 9)
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    df["DIF"] = ema12 - ema26
+    df["DEM"] = df["DIF"].ewm(span=9, adjust=False).mean()
+    df["MACD_Hist"] = df["DIF"] - df["DEM"]
+
+    # 四分層子圖：K線主圖 (45%) / 成交量 (15%) / KD (20%) / MACD (20%)
+    fig = make_subplots(
+        rows=4, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.03, 
+        row_heights=[0.45, 0.15, 0.20, 0.20]
+    )
+
+    # --- Row 1: K線 + 均線 + 布林通道 ---
     fig.add_trace(go.Candlestick(x=dates, open=df.Open, high=df.High, low=df.Low, close=df.Close,
                                 increasing_line_color="#ef4444", decreasing_line_color="#10b981", name="K線"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=dates, y=df.MA5, line=dict(color="#f59e0b", width=1.2), name="5日線"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=dates, y=df.MA20, line=dict(color="#2563eb", width=1.2), name="20日線"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=dates, y=df.MA60, line=dict(color="#9333ea", width=1.2), name="60日線"), row=1, col=1)
-    fig.add_trace(go.Bar(x=dates, y=df.Volume, marker_color=np.where(df.Close>=df.Open, "#ef4444", "#10b981"), name="成交量"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=dates, y=df.MA5, line=dict(color="#f59e0b", width=1), name="5MA"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=dates, y=df.MA20, line=dict(color="#2563eb", width=1), name="20MA"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=dates, y=df.MA60, line=dict(color="#9333ea", width=1), name="60MA"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=dates, y=df.MA120, line=dict(color="#64748b", width=1, dash="dot"), name="120MA"), row=1, col=1)
     
-    fig.update_layout(height=340, margin=dict(l=5, r=5, t=10, b=10), showlegend=True, template="plotly_white",
-                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
-    fig.update_xaxes(type="category", nticks=4, fixedrange=True)
+    fig.add_trace(go.Scatter(x=dates, y=df.BB_Upper, line=dict(color="#cbd5e1", width=1, dash="dash"), name="布林上軌"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=dates, y=df.BB_Lower, line=dict(color="#cbd5e1", width=1, dash="dash"), fill='tonexty', fillcolor='rgba(203,213,225,0.08)', name="布林下軌"), row=1, col=1)
+
+    # --- Row 2: 成交量 ---
+    fig.add_trace(go.Bar(x=dates, y=df.Volume, marker_color=np.where(df.Close>=df.Open, "#ef4444", "#10b981"), name="成交量"), row=2, col=1)
+
+    # --- Row 3: KD 指標 ---
+    fig.add_trace(go.Scatter(x=dates, y=df.K, line=dict(color="#2563eb", width=1.2), name="K值"), row=3, col=1)
+    fig.add_trace(go.Scatter(x=dates, y=df.D, line=dict(color="#f59e0b", width=1.2), name="D值"), row=3, col=1)
+
+    # --- Row 4: MACD 指標 ---
+    fig.add_trace(go.Bar(x=dates, y=df.MACD_Hist*2, marker_color=np.where(df.MACD_Hist>=0, "#ef4444", "#10b981"), name="柱狀體"), row=4, col=1)
+    fig.add_trace(go.Scatter(x=dates, y=df.DIF, line=dict(color="#2563eb", width=1.2), name="DIF"), row=4, col=1)
+    fig.add_trace(go.Scatter(x=dates, y=df.DEM, line=dict(color="#f59e0b", width=1.2), name="DEM"), row=4, col=1)
+
+    fig.update_layout(
+        height=580, 
+        margin=dict(l=5, r=5, t=10, b=10), 
+        showlegend=True, 
+        template="plotly_white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1, font=dict(size=10)),
+        xaxis_rangeslider_visible=False
+    )
+    fig.update_xaxes(type="category", nticks=5, fixedrange=True)
     fig.update_yaxes(fixedrange=True)
     st.plotly_chart(fig, use_container_width=True, key=key, config={"displayModeBar": False})
 
@@ -149,7 +210,7 @@ def card(obj, h, snap, view, chart=None, calendar=None, rank_idx=1):
  </div>
 </div>""", unsafe_allow_html=True)
     
-    with st.expander(f"🔍 點此展開 #{rank_idx} {obj.get('name')} 的營收基本面、籌碼與進出場價位", expanded=False):
+    with st.expander(f"🔍 點此展開 #{rank_idx} {obj.get('name')} 的基本面、籌碼與 K線/KD/MACD 技術圖表", expanded=False):
         eps_q_str = " / ".join([f"{v:.2f}" for v in funds.get("eps_quarters", [1.2, 1.5, 1.8, 2.1])])
         st.markdown(f"""
 <div class="fund-panel">
@@ -179,12 +240,11 @@ def card(obj, h, snap, view, chart=None, calendar=None, rank_idx=1):
         render_chart(chart, plan, f"chart_{view}_{h}_{obj.get('ticker')}_{snap_id}")
 
 def render_overview(snap):
-    st.subheader("📊 跨週期選股精選總覽 (獨立去重版)")
+    st.subheader("📊 跨週期選股精選總覽 (獨立去重與龍頭平衡版)")
     if not snap or not isinstance(snap, dict):
         st.info("尚無數據，請點擊上方『⚡ 更新最新行情與選股』。")
         return
 
-    # 跨週期去重，確保三個週期推薦完全不重複
     used_tickers = set()
     short_picks = service.select_market_best(snap, "short", n=5, exclude_tickers=used_tickers)
     used_tickers.update([s["ticker"] for s in short_picks])
@@ -212,14 +272,14 @@ def render_overview(snap):
   </tbody>
 </table>""", unsafe_allow_html=True)
 
-    st.caption("💡 點選上方頁籤可切換至各週期查看完整分析與 K 線圖。")
+    st.caption("💡 點選上方頁籤可切換至各週期查看完整分析與 K線/KD/MACD 技術圖表。")
 
 def main():
-    st.set_page_config(page_title="Alpha Radar 總覽版", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="Alpha Radar 旗艦版", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
     st.markdown(CSS, unsafe_allow_html=True)
     st.markdown("""<div class="hero">
 <h1>台股多因子量化選股系統</h1>
-<p>2,000+ 檔過濾 × 基本面護城河 × 跨區去重機制</p></div>""", unsafe_allow_html=True)
+<p>2,000+ 檔過濾 × 龍頭護城河加權 × 跨區去重機制</p></div>""", unsafe_allow_html=True)
     
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     
@@ -305,7 +365,6 @@ def main():
         h_key = {VIEW_LABELS[1]:"short", VIEW_LABELS[2]:"mid", VIEW_LABELS[3]:"long"}[view]
         st.subheader(HORIZON_LABELS.get(h_key, h_key))
         if snap and isinstance(snap, dict):
-            # 單一週期頁籤亦套用去重，避免顯現重複
             picked = service.select_market_best(snap, h_key, n=5)
             for idx, obj in enumerate(picked, 1):
                 card(obj, h_key, snap, h_key, calendar=calendar, rank_idx=idx)

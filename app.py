@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V13.0 Minimalist Mobile UI.
-Full Technical Indicators Rendering Engine.
+Taiwan Alpha Radar V14.1 Enterprise Mobile UI.
+Full Subplots Plotly Engine (K-line + 4MA + BB + KD + MACD).
 """
 from __future__ import annotations
 
@@ -25,6 +25,11 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("ALPHA_RADAR_DATA_DIR", str(ROOT / "data")))
 VIEW_LABELS = ["📊 全景總覽", "⚡ 短線布局", "📈 中線波段", "🧭 長線配置", "🔎 持股診斷"]
 HORIZON_LABELS = {"short": "短線 · 10日", "mid": "中線 · 40日", "long": "長線 · 120日"}
+STATE_LABEL_MAP = {
+    "CONDITIONS_MET_NOT_FILLED": ("✅ 買進區可布局", "#065f46", "#d1fae5"),
+    "WAIT_ENTRY_ZONE": ("⏳ 等待回檔進入買進區", "#854d0e", "#fef3c7"),
+    "ZONE_EXCEEDED_DO_NOT_CHASE": ("⚠️ 延伸過遠·禁止追高", "#991b1b", "#fee2e2")
+}
 
 CSS = """
 <style>
@@ -84,7 +89,6 @@ def money(value):
     return "—" if not np.isfinite(v) else f"{v:,.2f}".rstrip("0").rstrip(".")
 
 def render_chart(chart, plan, key):
-    """繪製包含 K線+4MA+布林通道+KD+MACD 之完整全功能圖表"""
     if not chart or "ohlcv" not in chart: return
     df = pd.DataFrame(chart["ohlcv"], columns=["Open", "High", "Low", "Close", "Volume"])
     dates = chart.get("dates", [])
@@ -94,18 +98,15 @@ def render_chart(chart, plan, key):
     high = df["High"]
     low = df["Low"]
 
-    # 1. 完整四均線系統 (5MA, 20MA, 60MA, 120MA)
     df["MA5"] = close.rolling(5).mean()
     df["MA20"] = close.rolling(20).mean()
     df["MA60"] = close.rolling(60).mean()
     df["MA120"] = close.rolling(120).mean()
 
-    # 2. 布林通道 (20MA ± 2SD)
     std20 = close.rolling(20).std()
     df["BB_Upper"] = df["MA20"] + 2 * std20
     df["BB_Lower"] = df["MA20"] - 2 * std20
 
-    # 3. KD 指標 (9, 3, 3)
     low9 = low.rolling(9).min()
     high9 = high.rolling(9).max()
     rsv = np.where(high9 == low9, 50, (close - low9) / (high9 - low9 + 1e-8) * 100)
@@ -123,14 +124,12 @@ def render_chart(chart, plan, key):
     df["K"] = k_list[1:]
     df["D"] = d_list[1:]
 
-    # 4. MACD 指標 (12, 26, 9)
     ema12 = close.ewm(span=12, adjust=False).mean()
     ema26 = close.ewm(span=26, adjust=False).mean()
     df["DIF"] = ema12 - ema26
     df["DEM"] = df["DIF"].ewm(span=9, adjust=False).mean()
     df["MACD_Hist"] = df["DIF"] - df["DEM"]
 
-    # 四分層子圖：K線主圖 (45%) / 成交量 (15%) / KD (20%) / MACD (20%)
     fig = make_subplots(
         rows=4, cols=1, 
         shared_xaxes=True, 
@@ -138,7 +137,6 @@ def render_chart(chart, plan, key):
         row_heights=[0.45, 0.15, 0.20, 0.20]
     )
 
-    # --- Row 1: K線 + 均線 + 布林通道 ---
     fig.add_trace(go.Candlestick(x=dates, open=df.Open, high=df.High, low=df.Low, close=df.Close,
                                 increasing_line_color="#ef4444", decreasing_line_color="#10b981", name="K線"), row=1, col=1)
     fig.add_trace(go.Scatter(x=dates, y=df.MA5, line=dict(color="#f59e0b", width=1), name="5MA"), row=1, col=1)
@@ -149,14 +147,11 @@ def render_chart(chart, plan, key):
     fig.add_trace(go.Scatter(x=dates, y=df.BB_Upper, line=dict(color="#cbd5e1", width=1, dash="dash"), name="布林上軌"), row=1, col=1)
     fig.add_trace(go.Scatter(x=dates, y=df.BB_Lower, line=dict(color="#cbd5e1", width=1, dash="dash"), fill='tonexty', fillcolor='rgba(203,213,225,0.08)', name="布林下軌"), row=1, col=1)
 
-    # --- Row 2: 成交量 ---
     fig.add_trace(go.Bar(x=dates, y=df.Volume, marker_color=np.where(df.Close>=df.Open, "#ef4444", "#10b981"), name="成交量"), row=2, col=1)
 
-    # --- Row 3: KD 指標 ---
     fig.add_trace(go.Scatter(x=dates, y=df.K, line=dict(color="#2563eb", width=1.2), name="K值"), row=3, col=1)
     fig.add_trace(go.Scatter(x=dates, y=df.D, line=dict(color="#f59e0b", width=1.2), name="D值"), row=3, col=1)
 
-    # --- Row 4: MACD 指標 ---
     fig.add_trace(go.Bar(x=dates, y=df.MACD_Hist*2, marker_color=np.where(df.MACD_Hist>=0, "#ef4444", "#10b981"), name="柱狀體"), row=4, col=1)
     fig.add_trace(go.Scatter(x=dates, y=df.DIF, line=dict(color="#2563eb", width=1.2), name="DIF"), row=4, col=1)
     fig.add_trace(go.Scatter(x=dates, y=df.DEM, line=dict(color="#f59e0b", width=1.2), name="DEM"), row=4, col=1)
@@ -179,8 +174,10 @@ def card(obj, h, snap, view, chart=None, calendar=None, rank_idx=1):
     f = block.get("forecast") or {}
     plan = block.get("plan")
     summary = f.get("strategy") or {}
-    condition = block.get("entry_state", "CONDITIONS_MET_NOT_FILLED")
+    entry_state = block.get("entry_state", "CONDITIONS_MET_NOT_FILLED")
     
+    st_text, st_fg, st_bg = STATE_LABEL_MAP.get(entry_state, ("✅ 買進區可布局", "#065f46", "#d1fae5"))
+
     funds = obj.get("fundamentals", {})
     chip = obj.get("chip_flow", {})
     ev = percent(summary.get("mean"))
@@ -198,9 +195,10 @@ def card(obj, h, snap, view, chart=None, calendar=None, rank_idx=1):
    <div class="card-price">{money(obj.get('price', 0))} 元</div>
  </div>
  
- <div style="margin-top:2px;">
+ <div style="margin-top:4px;">
    <span class="badge badge-sub">{esc(sub_ind)}</span>
    <span class="badge badge-emerald">分數：{factor_score:.1f} 分</span>
+   <span class="badge" style="color:{st_fg}; background:{st_bg};">{st_text}</span>
  </div>
  
  <div class="return-box">
@@ -278,8 +276,8 @@ def main():
     st.set_page_config(page_title="Alpha Radar 旗艦版", page_icon="📈", layout="centered", initial_sidebar_state="collapsed")
     st.markdown(CSS, unsafe_allow_html=True)
     st.markdown("""<div class="hero">
-<h1>台股多因子量化選股系統</h1>
-<p>2,000+ 檔過濾 × 龍頭護城河加權 × 跨區去重機制</p></div>""", unsafe_allow_html=True)
+<h1>台股多因子量化選股系統 V14.1</h1>
+<p>1,900+ 檔母池 × 龍頭護城河加權 × 追高保護與去重機制</p></div>""", unsafe_allow_html=True)
     
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     
@@ -299,7 +297,7 @@ def main():
             DailyPriceStore(DATA_DIR / "daily_prices.sqlite").clear()
             service.remove_saved_dashboard(DATA_DIR / "dashboard_snapshot.json")
             st.session_state.pop("v8_snapshot", None)
-            st.success("快照已重置！")
+            st.success("快照與快取已重置！")
 
     settings = service.RunSettings(reference_size=160, candidate_size=300, history_period="5y")
 
@@ -360,7 +358,7 @@ def main():
             card(dr["stock"], dr.get("h", "mid"), snap, "doctor", dr.get("chart"), calendar=calendar)
             if own:
                 result = holding_review(dr["stock"]["price"], original_invalidation=invalid, trailing_protection=trail, thesis_broken=(thesis == "看多理由已消失"))
-                st.info(HOLD_LABELS.get(result, result))
+                st.info(result)
     else:
         h_key = {VIEW_LABELS[1]:"short", VIEW_LABELS[2]:"mid", VIEW_LABELS[3]:"long"}[view]
         st.subheader(HORIZON_LABELS.get(h_key, h_key))

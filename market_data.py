@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar Market Data Engine V14.0.
-TWSE + TPEx Dual-Universe Synchronizer with Session Retry.
+Taiwan Alpha Radar Market Data Engine V14.1.
+TWSE + TPEx Dual-Universe Synchronizer with IP Bypassing.
 """
 from __future__ import annotations
 
@@ -42,7 +42,10 @@ def create_robust_session() -> requests.Session:
     adapter = HTTPAdapter(max_retries=retries)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
-    session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*"
+    })
     return session
 
 def fetch_twse_universe() -> pd.DataFrame:
@@ -52,7 +55,7 @@ def fetch_twse_universe() -> pd.DataFrame:
     # 1. 抓取上市股票 (TWSE)
     try:
         url_twse = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
-        res = session.get(url_twse, timeout=12)
+        res = session.get(url_twse, timeout=10)
         if res.status_code == 200:
             for item in res.json():
                 code = item.get("Code", "").strip()
@@ -63,10 +66,11 @@ def fetch_twse_universe() -> pd.DataFrame:
                     tickers.append((t_symbol, name, ind, sub_ind))
     except Exception: pass
 
-    # 2. 抓取上櫃股票 (TPEx)
+    # 2. 抓取上櫃股票 (TPEx OpenAPI)
+    tpex_count = 0
     try:
         url_tpex = "https://www.tpex.org.tw/openapi/v1/mopsfront_t187ap03_O"
-        res_tpex = session.get(url_tpex, timeout=15)
+        res_tpex = session.get(url_tpex, timeout=10)
         if res_tpex.status_code == 200:
             for item in res_tpex.json():
                 code = item.get("SecuritiesCompanyCode", "").strip()
@@ -75,7 +79,28 @@ def fetch_twse_universe() -> pd.DataFrame:
                     t_symbol = f"{code}.TWO"
                     ind, sub_ind = SUB_INDUSTRY_MAP.get(t_symbol, ("電子科技", "電子上游-關鍵零組件"))
                     tickers.append((t_symbol, name, ind, sub_ind))
+                    tpex_count += 1
     except Exception: pass
+
+    # 3. 若雲端 IP 遭櫃買中心阻擋，啟用備援陣列補充重點上櫃個股
+    if tpex_count < 100:
+        tpex_backup_codes = [
+            ("5483.TWO", "中美晶", "半導體", "半導體-矽晶圓"),
+            ("3105.TWO", "穩懋", "半導體", "化合物半導體-PA砷化鎵"),
+            ("6488.TWO", "環球晶", "半導體", "半導體-矽晶圓龍頭"),
+            ("8299.TWO", "群聯", "半導體", "半導體-記憶體控制IC"),
+            ("3293.TWO", "鈊象", "文化創意", "文創遊戲-遊戲股王"),
+            ("5536.TWO", "聖暉*", "電子零組件", "電子中游-廠務工程"),
+            ("6274.TWO", "台燿", "電子零組件", "電子材料-高階CCL"),
+            ("3147.TWO", "大綜", "數位服務", "資訊服務-雲端整合"),
+            ("6133.TWO", "金橋", "電子零組件", "電子零組件-高頻線材"),
+            ("3441.TWO", "聯一光電", "光電業", "電子中游-光學鏡片"),
+            ("7822.TWO", "倍利科", "其他電子", "電子中游-高階設備"),
+            ("6292.TWO", "迅德", "電子零組件", "電子零組件-變壓器"),
+            ("3402.TWO", "漢科", "其他電子", "半導體廠務-氣體工程"),
+            ("7799.TWO", "禾榮科", "生技醫療", "生技醫療-高階醫材")
+        ]
+        tickers.extend(tpex_backup_codes)
 
     if not tickers:
         backup = [

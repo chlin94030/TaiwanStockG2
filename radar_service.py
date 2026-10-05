@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V14.0 Service Engine.
-Pipeline Orchestrator & Cross-Horizon Lock.
+Taiwan Alpha Radar V14.1 Service Engine.
+Service Pipeline Orchestrator & Multi-Factor Filter.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from market_data import DailyPriceStore, fetch_twse_universe, _taipei_timestamp
 from policy_engine import generate_trade_plan, evaluate_entry_state
 from return_first_model import estimate_horizon_return, ModelDataError
 
-OPERATIONS_VERSION = "v14.0.0-enterprise"
+OPERATIONS_VERSION = "v14.1.0-enterprise"
 
 @dataclass
 class RunSettings:
@@ -96,7 +96,6 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
             v = float(df["Volume"].iloc[-20:].mean())
             turnover_20d = p * v
             
-            # 流動性門檻：股價 >= 30 元，日均成交額 >= 1.5 億元
             if p >= 30.0 and turnover_20d >= 150000000:
                 ret_20 = (p - float(df["Close"].iloc[-20])) / float(df["Close"].iloc[-20])
                 sample_market_rets.append(ret_20)

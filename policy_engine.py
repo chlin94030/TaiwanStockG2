@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V14.0 Policy Engine.
-Trade Plan & Limit-Up / Zone Breach Guardrails.
+Taiwan Alpha Radar V14.1 Policy Engine.
+Includes Limit-Up / Zone Overheat Guardrails.
 """
 from __future__ import annotations
 import numpy as np
@@ -55,7 +55,6 @@ def evaluate_entry_state(df: pd.DataFrame, plan: dict) -> str:
     zh = plan["zone_high"]
     zl = plan["zone_low"]
     
-    # 追高防護機制：價格超出買進區上限 3% 以上，觸發過熱觀望
     if p > zh * 1.03:
         return "ZONE_EXCEEDED_DO_NOT_CHASE"
     elif zl <= p <= zh * 1.03:

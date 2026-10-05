@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar V14.0 Return-First Model.
-Includes Market Cap Moat Weighting & Winsorized Returns.
+Taiwan Alpha Radar V14.1 Return-First Model.
+Market-Cap Factor & Institutional Quality Weights.
 """
 from __future__ import annotations
 
@@ -52,7 +52,6 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
     vol_daily = max(1e-6, np.std(recent_rets, ddof=1))
     vol_penalty = max(0.0, 1.0 - max(0.0, vol_daily - 0.032) / 0.02)
     
-    # 市值與龍頭護城河乘數 (避免小型股過度傾斜)
     market_leader_bonus = min(25.0, max(5.0, np.log10(p_now + 1.0) * 8.0))
     
     if p_now >= ma5 >= ma20 >= ma60: ma_quality = 1.0

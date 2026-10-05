@@ -1,6 +1,6 @@
 """
-Taiwan Alpha Radar Market Data Engine V13.0.
-OpenData & Realtime Dual-Sync Engine.
+Taiwan Alpha Radar Market Data Engine V14.0.
+TWSE + TPEx Dual-Universe Synchronizer with Session Retry.
 """
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import yfinance as yf
 
 def _taipei_timestamp() -> datetime.datetime:
@@ -29,27 +31,30 @@ SUB_INDUSTRY_MAP = {
     "2317.TW": ("其他電子", "電子中游-EMS代工組裝"),
     "2382.TW": ("電腦周邊", "電子中游-AI伺服器代工"),
     "1519.TW": ("電機機械", "重電綠能-變壓器外銷"),
-    "6122.TW": ("電機機械", "重電綠能-廠房工程建置"),
     "2881.TW": ("金融保險", "金融金控-金控獲利龍頭"),
-    "2882.TW": ("金融保險", "金融金控-壽險金控龍頭"),
-    "2891.TW": ("金融保險", "金融金控-銀行金控龍頭"),
-    "2327.TW": ("電子零組件", "電子上游-被動元件龍頭"),
-    "3037.TW": ("電子零組件", "電子上游-ABF載板龍頭"),
-    "2308.TW": ("電子零組件", "電子中游-電源與冷卻"),
     "2395.TW": ("電腦周邊", "工業電腦-物聯網龍頭"),
-    "5876.TW": ("金融保險", "金融銀行-高殖利率優等生"),
-    "1476.TW": ("紡織纖維", "傳統產業-成衣紡織龍頭"),
-    "2618.TW": ("航運業", "交通航運-航空客貨運龍頭")
+    "5876.TW": ("金融保險", "金融銀行-高殖利率優等生")
 }
+
+def create_robust_session() -> requests.Session:
+    session = requests.Session()
+    retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    return session
 
 def fetch_twse_universe() -> pd.DataFrame:
     tickers = []
+    session = create_robust_session()
+    
+    # 1. 抓取上市股票 (TWSE)
     try:
         url_twse = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
-        res = requests.get(url_twse, timeout=8)
+        res = session.get(url_twse, timeout=12)
         if res.status_code == 200:
-            data = res.json()
-            for item in data:
+            for item in res.json():
                 code = item.get("Code", "").strip()
                 name = item.get("Name", "").strip()
                 if len(code) == 4 and code.isdigit():
@@ -58,12 +63,12 @@ def fetch_twse_universe() -> pd.DataFrame:
                     tickers.append((t_symbol, name, ind, sub_ind))
     except Exception: pass
 
+    # 2. 抓取上櫃股票 (TPEx)
     try:
         url_tpex = "https://www.tpex.org.tw/openapi/v1/mopsfront_t187ap03_O"
-        res_tpex = requests.get(url_tpex, timeout=8)
+        res_tpex = session.get(url_tpex, timeout=15)
         if res_tpex.status_code == 200:
-            data_tpex = res_tpex.json()
-            for item in data_tpex:
+            for item in res_tpex.json():
                 code = item.get("SecuritiesCompanyCode", "").strip()
                 name = item.get("Company Name", "").strip()
                 if len(code) == 4 and code.isdigit():
@@ -76,10 +81,7 @@ def fetch_twse_universe() -> pd.DataFrame:
         backup = [
             ("2330.TW", "台積電", "半導體", "半導體-晶圓代工龍頭"),
             ("2317.TW", "鴻海", "其他電子", "電子中游-EMS代工組裝"),
-            ("2881.TW", "富邦金", "金融保險", "金融金控-金控獲利龍頭"),
-            ("2382.TW", "廣達", "電腦周邊", "電子中游-AI伺服器代工"),
-            ("3017.TW", "奇鋐", "電機機械", "電子中游-水冷散熱系統"),
-            ("1519.TW", "華城", "電機機械", "重電綠能-變壓器外銷")
+            ("2881.TW", "富邦金", "金融保險", "金融金控-金控獲利龍頭")
         ]
         return pd.DataFrame(backup, columns=["ticker", "name", "industry", "sub_industry"])
 

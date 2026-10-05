@@ -1,10 +1,9 @@
 """
-Taiwan Alpha Radar V13.0 Return-First Model Core.
-Market Cap Weighting & Institutional Quality Factors.
+Taiwan Alpha Radar V14.0 Return-First Model.
+Includes Market Cap Moat Weighting & Winsorized Returns.
 """
 from __future__ import annotations
 
-import datetime
 import numpy as np
 import pandas as pd
 
@@ -53,7 +52,7 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
     vol_daily = max(1e-6, np.std(recent_rets, ddof=1))
     vol_penalty = max(0.0, 1.0 - max(0.0, vol_daily - 0.032) / 0.02)
     
-    # 龍頭護城河與高股價乘數 (市值與法人承載力)
+    # 市值與龍頭護城河乘數 (避免小型股過度傾斜)
     market_leader_bonus = min(25.0, max(5.0, np.log10(p_now + 1.0) * 8.0))
     
     if p_now >= ma5 >= ma20 >= ma60: ma_quality = 1.0
@@ -68,7 +67,6 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         f_rs = min(1.0, max(0.0, (rs_20d + 0.01) / 0.06)) * 20.0
         f_quality = (ma_quality * 0.5 + vol_penalty * 0.5) * 15.0
         composite_score = f_vol + f_mom + f_rs + f_quality + (market_leader_bonus * 0.6)
-        
         daily_drift = np.clip((ret_5d / 5.0) * (composite_score / 60.0), -0.010, 0.012)
         max_cap = 0.20
         
@@ -79,7 +77,6 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         f_sharpe = min(1.0, max(0.0, (ret_20d / (vol_daily * 4.47) + 0.2) / 1.8)) * 20.0
         f_quality = vol_penalty * 10.0
         composite_score = f_trend + f_rs + f_sharpe + f_quality + (market_leader_bonus * 0.6)
-        
         daily_drift = np.clip((ret_20d / 20.0) * (composite_score / 60.0), -0.008, 0.009)
         max_cap = 0.35
         
@@ -91,7 +88,6 @@ def estimate_horizon_return(df: pd.DataFrame, horizon: str, settings, twii_ret_2
         f_vol_drag = vol_penalty * 15.0
         f_alpha = min(1.0, max(0.0, (ret_60d + 0.02) / 0.22)) * 25.0
         composite_score = f_trend + f_vol_drag + f_alpha + (market_leader_bonus * 0.8)
-        
         daily_drift = np.clip(geom_drift * (composite_score / 60.0), -0.005, 0.005)
         max_cap = 0.50
 

@@ -1,65 +1,64 @@
 """
-Trade Plan Generator & Entry State Evaluator.
+Taiwan Alpha Radar V14.0 Policy Engine.
+Trade Plan & Limit-Up / Zone Breach Guardrails.
 """
 from __future__ import annotations
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-ENGINE_VERSION = "v11.0-policy"
-HORIZONS = ["short", "mid", "long"]
+HORIZONS = {"short": "短線 · 10日", "mid": "中線 · 40日", "long": "長線 · 120日"}
 
-def generate_trade_plan(df: pd.DataFrame, horizon: str) -> dict | None:
+def generate_trade_plan(df: pd.DataFrame, horizon: str) -> dict:
     if df.empty or len(df) < 20:
-        return None
+        return {}
     
-    p_close = float(df["Close"].iloc[-1])
-    high_20 = float(df["High"].iloc[-20:].max())
-    low_20 = float(df["Low"].iloc[-20:].min())
-    atr = float((df["High"] - df["Low"]).iloc[-14:].mean()) if len(df) >= 14 else p_close * 0.03
+    p = float(df["Close"].iloc[-1])
+    ma5 = float(df["Close"].tail(5).mean())
+    ma20 = float(df["Close"].tail(20).mean())
+    ma60 = float(df["Close"].tail(60).mean()) if len(df) >= 60 else ma20
+    low_20d = float(df["Low"].tail(20).min())
+    atr = float((df["High"] - df["Low"]).tail(14).mean())
     
     if horizon == "short":
-        trigger = high_20 * 1.005
-        zone_low = p_close * 0.98
-        zone_high = p_close * 1.01
-        chase_limit = p_close * 1.03
-        invalidation = max(low_20, p_close - 2.0 * atr)
-        entry_mode = "breakout_confirmed"
+        zone_low = round(max(ma5, p - 0.8 * atr), 2)
+        zone_high = round(p * 1.015, 2)
+        invalidation = round(min(ma20, p - 1.8 * atr), 2)
+        target = round(p + (p - invalidation) * 2.2, 2)
     elif horizon == "mid":
-        trigger = high_20 * 1.01
-        zone_low = p_close * 0.96
-        zone_high = p_close * 1.015
-        chase_limit = p_close * 1.04
-        invalidation = p_close - 2.5 * atr
-        entry_mode = "zone_confirmed"
+        zone_low = round(max(ma20, p - 1.2 * atr), 2)
+        zone_high = round(p * 1.02, 2)
+        invalidation = round(min(ma60, low_20d * 0.97), 2)
+        target = round(p + (p - invalidation) * 2.5, 2)
     else:  # long
-        trigger = high_20 * 1.02
-        zone_low = p_close * 0.94
-        zone_high = p_close * 1.02
-        chase_limit = p_close * 1.05
-        invalidation = p_close - 3.0 * atr
-        entry_mode = "zone_confirmed"
+        zone_low = round(max(ma60, p - 2.0 * atr), 2)
+        zone_high = round(p * 1.03, 2)
+        invalidation = round(low_20d * 0.92, 2)
+        target = round(p + (p - invalidation) * 3.0, 2)
         
+    risk = max(0.1, p - invalidation)
+    reward = max(0.1, target - p)
+    rr_ratio = round(reward / risk, 2)
+    
     return {
-        "trigger": round(trigger, 2),
-        "zone_low": round(zone_low, 2),
-        "zone_high": round(zone_high, 2),
-        "chase_limit": round(chase_limit, 2),
-        "invalidation": round(invalidation, 2),
-        "entry_mode": entry_mode
+        "p_now": p,
+        "zone_low": zone_low,
+        "zone_high": zone_high,
+        "invalidation": invalidation,
+        "target": target,
+        "rr_ratio": rr_ratio,
+        "atr": round(atr, 2)
     }
 
-def evaluate_entry_state(df: pd.DataFrame, plan: dict | None) -> str:
-    if not plan or df.empty:
-        return "NO_RETURN_ESTIMATE"
+def evaluate_entry_state(df: pd.DataFrame, plan: dict) -> str:
+    if not plan: return "NO_DATA"
+    p = plan["p_now"]
+    zh = plan["zone_high"]
+    zl = plan["zone_low"]
     
-    p_close = float(df["Close"].iloc[-1])
-    if p_close <= plan["invalidation"]:
-        return "INVALIDATED"
-    elif p_close > plan["chase_limit"]:
-        return "DO_NOT_CHASE"
-    elif plan["zone_low"] <= p_close <= plan["zone_high"]:
+    # 追高防護機制：價格超出買進區上限 3% 以上，觸發過熱觀望
+    if p > zh * 1.03:
+        return "ZONE_EXCEEDED_DO_NOT_CHASE"
+    elif zl <= p <= zh * 1.03:
         return "CONDITIONS_MET_NOT_FILLED"
-    elif p_close < plan["zone_low"]:
-        return "WAIT_ENTRY_ZONE"
     else:
-        return "WAIT_BREAKOUT"
+        return "WAIT_ENTRY_ZONE"

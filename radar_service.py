@@ -1,13 +1,12 @@
 """
-Taiwan Alpha Radar V13.0 Final Service Engine.
-Institutional Quality Weighting & Cross-Horizon Deduplication.
+Taiwan Alpha Radar V14.0 Service Engine.
+Pipeline Orchestrator & Cross-Horizon Lock.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from pathlib import Path
 import json
-import os
 import hashlib
 import pandas as pd
 import numpy as np
@@ -16,7 +15,7 @@ from market_data import DailyPriceStore, fetch_twse_universe, _taipei_timestamp
 from policy_engine import generate_trade_plan, evaluate_entry_state
 from return_first_model import estimate_horizon_return, ModelDataError
 
-OPERATIONS_VERSION = "v13.0.0-final"
+OPERATIONS_VERSION = "v14.0.0-enterprise"
 
 @dataclass
 class RunSettings:
@@ -68,12 +67,12 @@ def _get_deterministic_seed(ticker: str) -> int:
 EXCLUDED_INDUSTRIES = {"鋼鐵工業", "化學工業", "建材營造", "玻璃陶瓷", "橡膠工業", "生技醫療業", "油電燃氣業"}
 
 def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
-    if progress: progress("載入全台股開放資料母池", 0.1)
+    if progress: progress("載入全台股開放資料母池 (TWSE+TPEx)", 0.1)
     universe = fetch_twse_universe()
     tickers = universe["ticker"].tolist()
     
     store = DailyPriceStore(data_dir / "daily_prices.sqlite")
-    if progress: progress("抓取最新盤後與行情數據", 0.3)
+    if progress: progress("抓取最新盤後與 15m 盤中行情數據", 0.3)
     store.batch_fetch_and_update(tickers, period="1y")
     
     valid_count = 0
@@ -97,7 +96,7 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
             v = float(df["Volume"].iloc[-20:].mean())
             turnover_20d = p * v
             
-            # 提高流動性與股價門檻：股價 >= 30 元，日均成交額 >= 1.5 億元
+            # 流動性門檻：股價 >= 30 元，日均成交額 >= 1.5 億元
             if p >= 30.0 and turnover_20d >= 150000000:
                 ret_20 = (p - float(df["Close"].iloc[-20])) / float(df["Close"].iloc[-20])
                 sample_market_rets.append(ret_20)
@@ -195,7 +194,6 @@ def run_scan(data_dir: Path, settings: RunSettings, progress=None) -> dict:
     return snap
 
 def select_market_best(snap: dict | None, horizon: str, n: int = 5, exclude_tickers: set | None = None) -> list:
-    """跨區完全去重與優勢週期鎖定排序器"""
     if not snap or not isinstance(snap, dict): return []
     stocks = snap.get("stocks", [])
     if exclude_tickers is None:
